@@ -1,4 +1,4 @@
-import { TimeSync } from './timeSync';
+
 // Use default import which typically works better with the alias to the minified UMD file
 // @ts-ignore
 import jsmediatags from 'jsmediatags';

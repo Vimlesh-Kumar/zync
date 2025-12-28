@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const SERVER_URL = `http://${window.location.hostname}:3000`;
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3000`;
 
 interface ConnectedClient {
     id: string;
