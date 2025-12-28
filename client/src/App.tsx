@@ -179,7 +179,7 @@ function App() {
               if ('mediaSession' in navigator) {
                   navigator.mediaSession.metadata = new MediaMetadata({
                       title: audioName || 'Vim Sync Track',
-                      artist: 'Vim SyncPlayer',
+                      artist: 'Zync',
                       artwork: albumArt ? [{ src: albumArt, sizes: '512x512', type: 'image/png' }] : []
                   });
                   
@@ -372,7 +372,9 @@ function App() {
     <div className="container">
       {!isAudioEnabled && (
           <div className="overlay-vlc">
-              <h2>Vim SyncPlayer</h2>
+              <img src="/zync-logo.svg" alt="Zync" className="brand-logo" />
+              <h2>Zync</h2>
+              <p className="overlay-tagline">In sync.</p>
               <p>Mobile browsers require permission to play audio.</p>
               <button onClick={enableAudio} className="vlc-btn-large">
                   ENABLE AUDIO SYNC
@@ -385,45 +387,53 @@ function App() {
 
       <header>
         <div className="header-left">
-            <h1>VIM SYNC</h1>
-            <div className="status-bar">
-                <span className={`pill ${socket?.connected ? 'green' : 'red'}`}>
-                    {socket?.connected ? 'Online' : 'Offline'}
-                </span>
-                <span className="pill blue">
-                    <Clock size={12} /> {offset.toFixed(0)}ms
-                </span>
+            <div className="brand-lockup">
+                <img src="/zync-logo.svg" alt="Zync Logo" className="brand-logo" />
+                <div className="brand-text">
+                    <h1>zync</h1>
+                    <span className="brand-tagline">In sync.</span>
+                </div>
             </div>
         </div>
+
+        <div className="status-bar">
+            {activeHostName && (
+                <span className="pill green host-indicator">
+                   Managed by {activeHostName}
+                </span>
+            )}
+            <span className={`pill ${socket?.connected ? 'green' : 'red'}`}>
+                {socket?.connected ? 'Online' : 'Offline'}
+            </span>
+            <span className="pill blue">
+                <Clock size={12} /> {offset.toFixed(0)}ms
+            </span>
+        </div>
         
-        {isHost && (
-            <button 
-                className={`devices-toggle ${showDevices ? 'active' : ''}`}
-                onClick={() => setShowDevices(!showDevices)}
-            >
-                <Users size={18} />
-                <span>{clients.length}</span>
-            </button>
-        )}
+        <div className="header-right">
+             {!activeHostName && (
+                <label className={`host-toggle-mini ${isHost ? 'active' : ''}`}>
+                    <input type="checkbox" checked={isHost} onChange={e => setIsHost(e.target.checked)} />
+                    {isHost ? <Monitor size={16} /> : <Radio size={16} />}
+                    <span>{isHost ? "Host Active" : "Be Host"}</span>
+                </label>
+             )}
+
+            {isHost && (
+                <button 
+                    className={`devices-toggle ${showDevices ? 'active' : ''}`}
+                    onClick={() => setShowDevices(!showDevices)}
+                >
+                    <Users size={18} />
+                    <span>{clients.length}</span>
+                </button>
+            )}
+        </div>
       </header>
 
       <main>
-        <div className="host-toggle-wrapper">
-          {activeHostName ? (
-              <div className="host-info-badge">
-                  <Monitor size={18} />
-                  <span>Controlled by {activeHostName}</span>
-              </div>
-          ) : (
-              <label className={`host-toggle-btn ${isHost ? 'active' : ''}`}>
-                  <input type="checkbox" checked={isHost} onChange={e => setIsHost(e.target.checked)} />
-                  {isHost ? <Monitor size={18} /> : <Radio size={18} />}
-                  {isHost ? "Host Controls Active" : "Enable Host Mode"}
-              </label>
-          )}
-        </div>
 
-        <div className="player-layout">
+        <div className={`player-layout ${isHost && showDevices ? 'split-view' : ''}`}>
             <div className="player-core">
                 <div className="album-art-wrap">
                     {albumArt ? (
@@ -585,7 +595,7 @@ function App() {
       </div>
 
       <footer>
-        Vim SyncPlayer • {clients.length} device{clients.length !== 1 ? 's' : ''} connected
+        Zync • {clients.length} device{clients.length !== 1 ? 's' : ''} connected
       </footer>
     </div>
   );

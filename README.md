@@ -1,8 +1,8 @@
-# Vim SyncPlayer
+# Zync
 
-**Vim SyncPlayer** is a web-based multi-device audio player that allows you to play music in perfect synchronization across multiple devices (Laptops, Phones, Tablets) connected to the same Wi-Fi network.
+**Zync** is a web-based multi-device audio player that allows you to play music in perfect synchronization across multiple devices (Laptops, Phones, Tablets) connected to the same Wi-Fi network.
 
-![Vim SyncPlayer UI](https://via.placeholder.com/800x400?text=Vim+SyncPlayer)
+![Zync UI](https://via.placeholder.com/800x400?text=Zync)
 
 ## Features
 
@@ -10,7 +10,7 @@
 *   **Host Control**: One device acts as the "Host" to upload songs, play, pause, and stop playback.
 *   **Late Join Support**: Devices can join in the middle of a song and effectively "catch up" instantly.
 *   **Mobile Support**: Includes a "Enable Audio" unlock flow for iOS/Android devices with strict autoplay policies.
-*   **Visualizer**: A sleek UI with a simulated audio visualizer.
+*   **Visualizer**: A sleek, modern UI with a simulated audio visualizer.
 
 ## Prerequisites
 
