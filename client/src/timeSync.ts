@@ -9,7 +9,7 @@ export class TimeSync {
     }
 
     async sync() {
-        const ITERATIONS = 10;
+        const ITERATIONS = 20;
         const results: { offset: number; roundTrip: number }[] = [];
 
         for (let i = 0; i < ITERATIONS; i++) {
@@ -19,30 +19,27 @@ export class TimeSync {
                     const t3 = Date.now();
                     const roundTrip = t3 - clientSendTime;
                     const latency = roundTrip / 2;
-
-                    // serverTime is the time at the server when it received the ping (approx t2)
-                    // The server's true time NOW (at t3) is serverTime + latency (approx)
-                    // So we want to find the diff between (serverTime + latency) and localTime (t3)
-
                     const estimatedServerTimeAtReceive = serverTime + latency;
                     const offset = estimatedServerTimeAtReceive - t3;
-
                     results.push({ offset, roundTrip });
                     resolve();
                 });
             });
-            // Small random delay to avoid maximizing congestion
-            await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+            await new Promise(r => setTimeout(r, 20));
         }
 
-        // Filter out outliers (high RTT implies queuing/jitter)
+        // Sort by RTT (lowest latency is best predictor)
         results.sort((a, b) => a.roundTrip - b.roundTrip);
 
-        // Take the best 3 results (lowest RTT)
-        const best = results.slice(0, 3);
-        const avgOffset = best.reduce((sum, r) => sum + r.offset, 0) / best.length;
+        // Take best 5
+        const best = results.slice(0, 5);
 
-        this.serverOffset = avgOffset;
+        // Calculate standard deviation of offsets to see network stability
+        const offsets = best.map(r => r.offset);
+        const avg = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+
+        // Use average of filtered best results
+        this.serverOffset = avg;
         console.log(`Time synced. Offset: ${this.serverOffset.toFixed(2)}ms. Best RTT: ${best[0].roundTrip}ms`);
         return this.serverOffset;
     }

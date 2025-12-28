@@ -22,10 +22,11 @@ let currentAudioName = null;
 let playbackState = {
   isPlaying: false,
   startTime: 0,
-  elapsed: 0 // Track how much time has successfully played to handle syncing resumes
+  elapsed: 0 // Track how much time has successfully// Placeholder to view file. played to handle syncing resumes
 };
 
 const clients = new Map();
+let currentHostId = null;
 
 io.on('connection', (socket) => {
   console.log('Client connected', socket.id);
@@ -53,13 +54,52 @@ io.on('connection', (socket) => {
   }
   broadcastClientsToHosts();
 
+  // Time Sync
   // Handle identity update
   socket.on('update_identity', (data) => {
     const client = clients.get(socket.id);
-    if (client) {
-      Object.assign(client, data);
-      broadcastClientsToHosts();
+    if (!client) return;
+
+    // Strict Host Locking Logic
+    if (data.isHost !== undefined) {
+      if (data.isHost) {
+        // Trying to become host
+        if (currentHostId === null) {
+          // Success: Claim host
+          currentHostId = socket.id;
+          client.isHost = true;
+          console.log(`Host claimed by ${client.name} (${socket.id})`);
+        } else if (currentHostId === socket.id) {
+          // Already host, just refreshing (e.g. re-render)
+          client.isHost = true;
+        } else {
+          // Failed: Someone else is host
+          client.isHost = false;
+          // We don't overwrite other data, just deny host
+        }
+      } else {
+        // Trying to stop being host
+        if (currentHostId === socket.id) {
+          currentHostId = null;
+          client.isHost = false;
+          console.log(`Host released by ${client.name}`);
+        } else {
+          client.isHost = false;
+        }
+      }
     }
+
+    // Update other properties safely
+    if (data.name) client.name = data.name;
+    if (data.volume !== undefined) client.volume = data.volume;
+    if (data.status) client.status = data.status;
+
+    // Force strict host state in client object to match server truth
+    client.isHost = (currentHostId === socket.id);
+
+    broadcastClientsToHosts();
+    // Send back the corrected state to the requester so UI updates if denied
+    socket.emit('identity_corrected', { isHost: client.isHost });
   });
 
   // Time Sync
@@ -173,6 +213,13 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected', socket.id);
     clients.delete(socket.id);
+
+    // Release host lock if the host disconnects
+    if (currentHostId === socket.id) {
+      currentHostId = null;
+      console.log("Host disconnected, lock released.");
+    }
+
     broadcastClientsToHosts();
   });
 });

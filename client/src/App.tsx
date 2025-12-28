@@ -24,6 +24,7 @@ function App() {
   const [status, setStatus] = useState<string>('Connecting...');
   const [offset, setOffset] = useState<number>(0);
   const [audioName, setAudioName] = useState<string | null>(null);
+  const [albumArt, setAlbumArt] = useState<string | null>(null);
   const [isHost, setIsHost] = useState<boolean>(false);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -97,6 +98,13 @@ function App() {
         }
     });
 
+    // Handle host denial/correction
+    s.on('identity_corrected', ({ isHost: validatedStatus }) => {
+         if (isHost !== validatedStatus) {
+             setIsHost(validatedStatus);
+         }
+    });
+
     if (audioEngineRef.current.ctx.state === 'running') {
         setIsAudioEnabled(true);
     }
@@ -139,6 +147,8 @@ function App() {
         if (data && data.buffer) {
           try {
             await audioEngineRef.current?.load(data.buffer, data.type);
+            // Extract album art
+            audioEngineRef.current?.getAlbumArt(data.buffer).then((url) => setAlbumArt(url));
             setStatus(`Ready`);
             s.emit('update_identity', { status: 'Ready' });
           } catch (e) {
@@ -164,6 +174,22 @@ function App() {
               audioEngineRef.current.play(startTime, timeSyncRef.current!.serverOffset);
               setStatus(`Playing`);
               s.emit('update_identity', { status: 'Playing' });
+              
+              // Update Media Session for Lock Screen
+              if ('mediaSession' in navigator) {
+                  navigator.mediaSession.metadata = new MediaMetadata({
+                      title: audioName || 'Vim Sync Track',
+                      artist: 'Vim SyncPlayer',
+                      artwork: albumArt ? [{ src: albumArt, sizes: '512x512', type: 'image/png' }] : []
+                  });
+                  
+                  navigator.mediaSession.setActionHandler('play', () => { s.emit('play', 0); });
+                  navigator.mediaSession.setActionHandler('pause', () => { s.emit('pause'); });
+                  navigator.mediaSession.setActionHandler('stop', () => { s.emit('stop'); });
+                  navigator.mediaSession.setActionHandler('seekto', (details) => {
+                       if (details.seekTime !== undefined) s.emit('seek', details.seekTime * 1000); 
+                  });
+              }
           }
       };
       waitAndPlay();
@@ -218,6 +244,9 @@ function App() {
   // Update server when isHost changes
   useEffect(() => {
     socket?.emit('update_identity', { isHost });
+    if (isHost && window.innerWidth > 900) {
+        setShowDevices(true);
+    }
   }, [isHost, socket]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -227,6 +256,7 @@ function App() {
     const buffer = await file.arrayBuffer();
     socket.emit('upload_audio', { name: file.name, type: file.type, buffer: buffer });
     audioEngineRef.current?.load(buffer, file.type);
+    audioEngineRef.current?.getAlbumArt(buffer).then((url) => setAlbumArt(url));
     setAudioName(file.name);
     setStatus('Ready to Sync');
   };
@@ -305,6 +335,39 @@ function App() {
     ? audioEngineRef.current.buffer.duration * 1000 
     : 0;
 
+  // Screen Wake Lock
+  useEffect(() => {
+    let wakeLock: any = null;
+    const requestWakeLock = async () => {
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLock = await (navigator as any).wakeLock.request('screen');
+                console.log('Wake Lock active');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+    
+    // Request on mount/interaction
+    if (isAudioEnabled) requestWakeLock();
+
+    const handleVisibility = () => {
+        if (document.visibilityState === 'visible' && isAudioEnabled) {
+             requestWakeLock();
+        }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+        if (wakeLock) wakeLock.release();
+        document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isAudioEnabled]);
+
+  // Determine if another host controls the session
+  const activeHostName = clients.find(c => c.isHost && c.id !== socket?.id)?.name;
+
   return (
     <div className="container">
       {!isAudioEnabled && (
@@ -346,17 +409,28 @@ function App() {
 
       <main>
         <div className="host-toggle-wrapper">
-          <label className={`host-toggle-btn ${isHost ? 'active' : ''}`}>
-              <input type="checkbox" checked={isHost} onChange={e => setIsHost(e.target.checked)} />
-              {isHost ? <Monitor size={18} /> : <Radio size={18} />}
-              {isHost ? "Host Controls Active" : "Enable Host Mode"}
-          </label>
+          {activeHostName ? (
+              <div className="host-info-badge">
+                  <Monitor size={18} />
+                  <span>Controlled by {activeHostName}</span>
+              </div>
+          ) : (
+              <label className={`host-toggle-btn ${isHost ? 'active' : ''}`}>
+                  <input type="checkbox" checked={isHost} onChange={e => setIsHost(e.target.checked)} />
+                  {isHost ? <Monitor size={18} /> : <Radio size={18} />}
+                  {isHost ? "Host Controls Active" : "Enable Host Mode"}
+              </label>
+          )}
         </div>
 
         <div className="player-layout">
             <div className="player-core">
                 <div className="album-art-wrap">
-                    <Music size={120} className={isPlaying ? "icon-pulse" : ""} />
+                    {albumArt ? (
+                        <img src={albumArt} alt="Album Art" className={`album-art-img ${isPlaying ? "playing" : ""}`} />
+                    ) : (
+                        <Music size={120} className={isPlaying ? "icon-pulse" : ""} />
+                    )}
                 </div>
                 
                 <div className="track-info">
@@ -407,21 +481,34 @@ function App() {
             {isHost && showDevices && (
                 <div className="devices-panel">
                     <div className="panel-header">
-                        <Users size={18} />
-                        <h3>Connected Devices</h3>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                            <Users size={18} />
+                            <h3>Device Management</h3>
+                        </div>
+                        <span className="device-count">{clients.length - 1} connected</span>
                     </div>
                     <div className="device-list">
-                        {clients.filter(c => c.id !== socket?.id).map(client => (
-                            <div key={client.id} className="device-item">
+                        {[...clients].sort((a, b) => (a.isHost === b.isHost ? 0 : a.isHost ? -1 : 1)).map(client => (
+                            <div key={client.id} className={`device-item ${client.id === socket?.id ? 'current-device' : ''}`}>
                                 <div className="device-info">
-                                    <div className="device-name">
-                                        {getDeviceIcon(client.name)}
-                                        <span>{client.name}</span>
-                                        {client.isHost && <span className="host-badge">HOST</span>}
-                                    </div>
-                                    <div className="device-meta">
-                                        <span className={`status-dot ${client.status.toLowerCase()}`}></span>
-                                        {client.status} • {client.latency}ms
+                                    <div className="device-name-wrap">
+                                        <div className="device-name">
+                                            <div className="device-icon-box">
+                                                {getDeviceIcon(client.name)}
+                                            </div>
+                                            <span>
+                                                {client.name}
+                                                {client.id === socket?.id && " (You)"}
+                                            </span>
+                                            {client.isHost && <span className="host-badge">HOST</span>}
+                                        </div>
+                                        <div className="device-meta">
+                                            <div className="status-indicator">
+                                                <span className={`status-dot ${client.status.toLowerCase()}`}></span>
+                                                {client.status}
+                                            </div>
+                                            <span className="latency-badge">{client.latency}ms</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="device-controls">
@@ -440,7 +527,8 @@ function App() {
                         ))}
                         {clients.length <= 1 && (
                             <div className="no-devices">
-                                No other devices connected
+                                <Users size={40} opacity={0.2} />
+                                <p>Waiting for other devices to join...</p>
                             </div>
                         )}
                     </div>

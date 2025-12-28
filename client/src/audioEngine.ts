@@ -1,3 +1,8 @@
+import { TimeSync } from './timeSync';
+// Use default import which typically works better with the alias to the minified UMD file
+// @ts-ignore
+import jsmediatags from 'jsmediatags';
+
 export class AudioEngine {
     ctx: AudioContext;
     buffer: AudioBuffer | null = null;
@@ -17,6 +22,7 @@ export class AudioEngine {
         this.audioTag = new Audio();
         this.audioTag.preload = 'auto';
         this.audioTag.style.display = 'none';
+
         document.body.appendChild(this.audioTag);
     }
 
@@ -98,7 +104,13 @@ export class AudioEngine {
 
         console.log(`AudioEngine: Play Scheduled. Delay: ${delayS.toFixed(2)}s, Offset: ${offsetS.toFixed(2)}s`);
 
-        // iOS Logic: Use Audio Tag if we can, else WebAudio
+        // PRIORITY: proper WebAudio (Low Latency + Volume Control)
+        if (this.buffer) {
+            this.playWebAudio(delayS, offsetS);
+            return;
+        }
+
+        // Fallback: iOS / HTML5 Audio if WebAudio decode failed
         if (this.audioTag && this.blobUrl) {
             const startTag = () => {
                 if (!this.audioTag) return;
@@ -107,11 +119,9 @@ export class AudioEngine {
                     this.audioTag.currentTime = offsetS;
                     this.audioTag.play().catch(e => {
                         console.error("AudioTag.play() failed:", e.name, e.message);
-                        this.playWebAudio(0, offsetS); // Fallback immediately
                     });
                 } catch (e) {
-                    console.error("AudioTag seek failed, likely metadata not ready yet.", e);
-                    this.playWebAudio(0, offsetS);
+                    console.error("AudioTag seek failed", e);
                 }
             };
 
@@ -120,8 +130,6 @@ export class AudioEngine {
             } else {
                 startTag();
             }
-        } else {
-            this.playWebAudio(delayS, offsetS);
         }
     }
 
@@ -136,7 +144,11 @@ export class AudioEngine {
     setVolume(value: number) {
         // value should be 0 to 1
         const vol = Math.max(0, Math.min(1, value));
+
+        // Use GainNode for smooth volume transitions (for WebAudio playback)
         this.gainNode.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
+
+        // Control AudioTag volume directly (since it's not routed anymore)
         if (this.audioTag) {
             this.audioTag.volume = vol;
         }
@@ -152,5 +164,47 @@ export class AudioEngine {
             this.source.disconnect();
             this.source = null;
         }
+    }
+
+    async getAlbumArt(arrayBuffer: ArrayBuffer): Promise<string | null> {
+        return new Promise((resolve) => {
+            const blob = new Blob([arrayBuffer]);
+
+            // Robustly find the read function (handles various import/bundling scenarios)
+            const JSM: any = jsmediatags;
+            const readFn = JSM.read || JSM.default?.read || (window as any).jsmediatags?.read;
+
+            if (!readFn) {
+                console.warn("AudioEngine: jsmediatags.read not found");
+                resolve(null);
+                return;
+            }
+
+            readFn(blob, {
+                onSuccess: (tag: any) => {
+                    const picture = tag.tags.picture;
+                    if (picture) {
+                        try {
+                            const data = picture.data;
+                            let base64String = "";
+                            for (let i = 0; i < data.length; i++) {
+                                base64String += String.fromCharCode(data[i]);
+                            }
+                            const base64 = btoa(base64String);
+                            resolve(`data:${picture.format};base64,${base64}`);
+                        } catch (e) {
+                            console.warn("Album art processing failed", e);
+                            resolve(null);
+                        }
+                    } else {
+                        resolve(null);
+                    }
+                },
+                onError: (error: any) => {
+                    console.warn("MediaTags warning:", error);
+                    resolve(null);
+                }
+            });
+        });
     }
 }
