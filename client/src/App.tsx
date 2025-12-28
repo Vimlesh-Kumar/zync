@@ -48,6 +48,16 @@ function App() {
         setIsAudioEnabled(true);
     }
 
+    const handleStateChange = () => {
+        if (audioEngineRef.current) {
+            console.log("App: AudioContext state changed to:", audioEngineRef.current.ctx.state);
+            setIsAudioEnabled(audioEngineRef.current.ctx.state === 'running');
+        }
+    };
+
+    const ctx = audioEngineRef.current.ctx;
+    ctx.addEventListener('statechange', handleStateChange);
+
     s.on('connect', () => {
       setStatus('Online');
       timeSyncRef.current?.sync().then((off) => {
@@ -81,9 +91,10 @@ function App() {
       s.emit('request_audio', async (data: any) => {
         if (data && data.buffer) {
           try {
-            await audioEngineRef.current?.load(data.buffer);
+            await audioEngineRef.current?.load(data.buffer, data.type);
             setStatus(`Ready`);
           } catch (e) {
+            console.error("Load error:", e);
             setStatus('Format Error');
           }
         }
@@ -148,6 +159,7 @@ function App() {
     });
 
     return () => {
+      ctx.removeEventListener('statechange', handleStateChange);
       s.disconnect();
     };
   }, []);
@@ -158,7 +170,7 @@ function App() {
     setStatus(`Uploading...`);
     const buffer = await file.arrayBuffer();
     socket.emit('upload_audio', { name: file.name, type: file.type, buffer: buffer });
-    audioEngineRef.current?.load(buffer);
+    audioEngineRef.current?.load(buffer, file.type);
     setAudioName(file.name);
     setStatus('Ready to Sync');
   };
@@ -200,6 +212,11 @@ function App() {
         if (success) {
             setIsAudioEnabled(true);
             setStatus("Ready");
+            
+            // If already playing, start audio engine immediately
+            if (isPlaying && sessionStartTime > 0 && timeSyncRef.current) {
+                audioEngineRef.current.play(sessionStartTime, timeSyncRef.current.serverOffset);
+            }
         } else {
             setStatus("Context Error");
         }
@@ -207,7 +224,7 @@ function App() {
   };
 
   const handleTestSound = () => {
-      audioEngineRef.current?.resumeContext();
+      audioEngineRef.current?.resumeContext(false);
   };
 
   const maxDuration = audioEngineRef.current?.buffer?.duration 

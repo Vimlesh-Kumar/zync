@@ -4,94 +4,140 @@ export class AudioEngine {
     source: AudioBufferSourceNode | null = null;
     gainNode: GainNode;
 
+    audioTag: HTMLAudioElement | null = null;
+    blobUrl: string | null = null;
+
     constructor() {
         const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
         this.ctx = new AudioContextClass();
         this.gainNode = this.ctx.createGain();
         this.gainNode.connect(this.ctx.destination);
+
+        // Setup hidden audio tag for iOS fallback
+        this.audioTag = new Audio();
+        this.audioTag.preload = 'auto';
+        this.audioTag.style.display = 'none';
+        document.body.appendChild(this.audioTag);
     }
 
-    async load(arrayBuffer: ArrayBuffer) {
-        return new Promise<void>((resolve, reject) => {
-            this.ctx.decodeAudioData(
-                arrayBuffer,
-                (buffer) => {
-                    this.buffer = buffer;
-                    console.log("AudioEngine: Decoded successfully, duration:", this.buffer.duration);
-                    resolve();
-                },
-                (err) => {
-                    console.error("AudioEngine: Decode failed", err);
-                    reject(err);
-                }
-            );
-        });
-    }
+    async load(arrayBuffer: ArrayBuffer, mimeType: string = 'audio/mpeg') {
+        console.log(`AudioEngine: Loading ${arrayBuffer.byteLength} bytes as ${mimeType}`);
 
-    async resumeContext() {
-        console.log("AudioEngine: Attempting to resume context...");
-        if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') {
-            await this.ctx.resume();
+        // 1. Clear previous
+        if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
+
+        // 2. WebAudio Decoding (for duration/visuals)
+        try {
+            // Need a fresh copy for decodeAudioData
+            const decodeCopy = arrayBuffer.slice(0);
+            this.buffer = await this.ctx.decodeAudioData(decodeCopy);
+            console.log("AudioEngine: WebAudio Decoded, duration:", this.buffer.duration);
+        } catch (e) {
+            console.error("AudioEngine: WebAudio decode failed. Format might not be supported.");
         }
 
-        // Essential for iOS: play a burst of sound on user interaction
-        const osc = this.ctx.createOscillator();
-        const silentGain = this.ctx.createGain();
-        osc.connect(silentGain);
-        silentGain.connect(this.ctx.destination);
-        silentGain.gain.setValueAtTime(0, this.ctx.currentTime);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.1);
+        // 3. Create Blob URL for HTML5 Audio Tag
+        const blob = new Blob([arrayBuffer], { type: mimeType });
+        this.blobUrl = URL.createObjectURL(blob);
 
-        console.log("AudioEngine: Context state after resume:", this.ctx.state);
-        return this.ctx.state === 'running';
+        if (this.audioTag) {
+            this.audioTag.src = this.blobUrl;
+            this.audioTag.load();
+        }
+    }
+
+    async resumeContext(silent: boolean = true) {
+        console.log("AudioEngine: Resuming (state: " + this.ctx.state + ")");
+
+        // iOS requires user gesture to start HTML5 audio too
+        if (this.audioTag) {
+            this.audioTag.play().then(() => {
+                this.audioTag?.pause();
+                if (this.audioTag) this.audioTag.currentTime = 0;
+            }).catch(e => console.warn("AudioTag unlock failed", e));
+        }
+
+        try {
+            await this.ctx.resume();
+
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            if (silent) {
+                gain.gain.setValueAtTime(0, this.ctx.currentTime);
+                osc.start(0);
+                osc.stop(this.ctx.currentTime + 0.1);
+            } else {
+                osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5);
+                osc.start(0);
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+
+            return this.ctx.state === 'running';
+        } catch (e) {
+            return false;
+        }
     }
 
     play(startServerTime: number, serverTimeOffset: number) {
-        if (!this.buffer) {
-            console.warn("AudioEngine: Cannot play, no buffer loaded.");
-            return;
-        }
-
         this.stop();
 
-        const playInternal = () => {
-            if (!this.buffer || !this.ctx) return;
+        const nowLocal = Date.now();
+        const startLocal = startServerTime - serverTimeOffset;
+        let delayS = (startLocal - nowLocal) / 1000;
+        let offsetS = 0;
 
-            const nowLocal = Date.now();
-            const startLocal = startServerTime - serverTimeOffset;
+        if (delayS < 0) {
+            offsetS = -delayS;
+            delayS = 0;
+        }
 
-            let delay = (startLocal - nowLocal) / 1000;
-            let startOffset = 0;
+        console.log(`AudioEngine: Play Scheduled. Delay: ${delayS.toFixed(2)}s, Offset: ${offsetS.toFixed(2)}s`);
 
-            if (delay < 0) {
-                if (-delay > this.buffer.duration) {
-                    console.log("AudioEngine: Playback time is beyond buffer duration");
-                    return;
+        // iOS Logic: Use Audio Tag if we can, else WebAudio
+        if (this.audioTag && this.blobUrl) {
+            const startTag = () => {
+                if (!this.audioTag) return;
+
+                try {
+                    this.audioTag.currentTime = offsetS;
+                    this.audioTag.play().catch(e => {
+                        console.error("AudioTag.play() failed:", e.name, e.message);
+                        this.playWebAudio(0, offsetS); // Fallback immediately
+                    });
+                } catch (e) {
+                    console.error("AudioTag seek failed, likely metadata not ready yet.", e);
+                    this.playWebAudio(0, offsetS);
                 }
-                startOffset = -delay;
-                delay = 0;
+            };
+
+            if (delayS > 0) {
+                setTimeout(startTag, delayS * 1000);
+            } else {
+                startTag();
             }
-
-            console.log(`AudioEngine: Scheduling start in ${delay.toFixed(3)}s at offset ${startOffset.toFixed(3)}s`);
-
-            this.source = this.ctx.createBufferSource();
-            this.source.buffer = this.buffer;
-            this.source.connect(this.gainNode);
-            this.gainNode.gain.value = 1.0;
-
-            // start(when, offset)
-            this.source.start(this.ctx.currentTime + delay, startOffset);
-        };
-
-        if (this.ctx.state !== 'running') {
-            this.ctx.resume().then(() => playInternal());
         } else {
-            playInternal();
+            this.playWebAudio(delayS, offsetS);
         }
     }
 
+    private playWebAudio(delay: number, offset: number) {
+        if (!this.buffer) return;
+        this.source = this.ctx.createBufferSource();
+        this.source.buffer = this.buffer;
+        this.source.connect(this.gainNode);
+        this.source.start(this.ctx.currentTime + delay, offset);
+    }
+
     stop() {
+        if (this.audioTag) {
+            this.audioTag.pause();
+            this.audioTag.currentTime = 0;
+        }
         if (this.source) {
             try { this.source.stop(); } catch (e) { }
             this.source.disconnect();
