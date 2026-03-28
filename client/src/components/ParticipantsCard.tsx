@@ -7,12 +7,14 @@ interface ParticipantsCardProps {
   activeHostName?: string;
   isCurrentHost: boolean;
   canClaimHost: boolean;
-  audioName: string | null;
   onClaimHost: () => void;
   onReleaseHost: () => void;
   onAssignHost: (targetId: string) => void;
   onRemoteVolume: (targetId: string, value: number) => void;
   onUploadTrack: (file: File) => void;
+  playlist: File[];
+  activeTrackName: string | null;
+  onAddTracks: (files: FileList) => void;
 }
 
 const getDeviceIcon = (name: string) => {
@@ -28,12 +30,14 @@ export const ParticipantsCard = ({
   activeHostName,
   isCurrentHost,
   canClaimHost,
-  audioName,
   onClaimHost,
   onReleaseHost,
   onAssignHost,
   onRemoteVolume,
   onUploadTrack,
+  playlist,
+  activeTrackName,
+  onAddTracks,
 }: ParticipantsCardProps) => {
   return (
     <aside className="side-card">
@@ -62,18 +66,38 @@ export const ParticipantsCard = ({
       </div>
 
       {isCurrentHost && (
-        <label className="upload-btn">
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onUploadTrack(file);
-            }}
-            hidden
-          />
-          <Upload size={16} /> {audioName ? 'Replace Track' : 'Upload Track'}
-        </label>
+        <>
+          <label className="upload-btn">
+            <input
+              type="file"
+              accept="audio/*"
+              multiple
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) onAddTracks(e.target.files);
+              }}
+              hidden
+            />
+            <Upload size={16} /> Add Tracks
+          </label>
+
+          {playlist.length > 0 && (
+            <div className="playlist-panel">
+              <h4>Room Playlist</h4>
+              <div className="playlist-list">
+                {playlist.map((track, idx) => (
+                  <button
+                    key={`${track.name}-${idx}`}
+                    className={`track-item ${activeTrackName === track.name ? 'active' : ''}`}
+                    onClick={() => onUploadTrack(track)}
+                  >
+                    <span>{track.name}</span>
+                    <span className="muted">Push to room</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="device-list">

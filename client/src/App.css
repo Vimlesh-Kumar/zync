@@ -160,6 +160,60 @@ body {
   margin: -4px 0 16px;
 }
 
+.source-panel {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(137, 166, 202, 0.08);
+}
+
+.source-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.playlist-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(137, 166, 202, 0.08);
+  padding: 10px;
+}
+
+.playlist-panel h4 {
+  margin: 0 0 8px;
+  font-size: 0.86rem;
+}
+
+.playlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.track-item {
+  border: 1px solid rgba(137, 166, 202, 0.34);
+  border-radius: 10px;
+  background: rgba(137, 166, 202, 0.1);
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.track-item.active {
+  border-color: rgba(45, 212, 191, 0.6);
+  background: rgba(45, 212, 191, 0.16);
+}
+
 .invite-link {
   width: 100%;
   border: 1px solid var(--border);
@@ -483,6 +537,10 @@ body {
   .app-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .source-actions {
+    grid-template-columns: 1fr;
   }
 
   .header-meta {

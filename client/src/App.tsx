@@ -11,6 +11,7 @@ import './App.css';
 function App() {
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [playlist, setPlaylist] = useState<File[]>([]);
 
   const room = useZyncRoom();
   const inviteLink = `${window.location.origin}/?room=${room.roomCode}`;
@@ -59,6 +60,17 @@ function App() {
 
   const activeHostName = room.activeHost?.name;
   const canShare = useMemo(() => 'share' in navigator, []);
+  const canPlay = Boolean(room.audioName);
+
+  const addTracks = (files: FileList) => {
+    const onlyAudio = Array.from(files).filter((file) => file.type.startsWith('audio/'));
+    if (onlyAudio.length === 0) {
+      room.setStatus('Please choose audio files only');
+      return;
+    }
+    setPlaylist((prev) => [...prev, ...onlyAudio]);
+    room.setStatus(`${onlyAudio.length} track(s) added`);
+  };
 
   return (
     <div className="container">
@@ -102,7 +114,7 @@ function App() {
             maxDuration={room.maxDuration}
             formatTime={formatTime}
             canControl={room.isCurrentHost}
-            canPlay={Boolean(room.audioName)}
+            canPlay={canPlay}
             volume={room.volume}
             onSeek={room.seek}
             onStop={room.stop}
@@ -119,12 +131,14 @@ function App() {
           activeHostName={activeHostName}
           isCurrentHost={room.isCurrentHost}
           canClaimHost={room.canClaimHost && Boolean(room.socket?.connected) && room.isRoomJoined}
-          audioName={room.audioName}
           onClaimHost={room.claimHost}
           onReleaseHost={room.releaseHost}
           onAssignHost={room.assignHost}
           onRemoteVolume={room.setRemoteVolume}
           onUploadTrack={room.uploadTrack}
+          playlist={playlist}
+          activeTrackName={room.audioName}
+          onAddTracks={addTracks}
         />
       </main>
     </div>

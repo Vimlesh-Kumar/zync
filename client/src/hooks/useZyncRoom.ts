@@ -316,7 +316,8 @@ export const useZyncRoom = () => {
   const stop = () => socket?.emit('stop');
 
   const seek = (value: number) => {
-    if (!socket || !audioEngineRef.current?.buffer || !isCurrentHost) return;
+    if (!socket || !isCurrentHost) return;
+    if (!audioEngineRef.current?.buffer) return;
     setCurrentTime(value);
     socket.emit('seek', value);
   };
